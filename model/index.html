@@ -1,0 +1,1127 @@
+<title>Sling TSi 3D</title>
+<meta name="description" content="Interactive procedural 3D model of the Sling TSi four-seat light aircraft.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a spec-sheet rail on the left, the aircraft on a hangar-floor stage filling the rest; rail drops below the stage on phones. */
+  :root {
+    --bg: #e8ecef;
+    --panel: #f6f8f9;
+    --fg: #131c24;
+    --muted: #586571;
+    --line: #cfd6dc;
+    --accent: #1f4fa8;
+    --accent-fg: #ffffff;
+    --scene: #dfe5ea;
+    --ground: #ccd4db;
+    --dim: #1f4fa8;
+    --display: "Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e141a; --panel: #121a21; --fg: #e4ebf0; --muted: #8b98a4; --line: #25313c;
+      --accent: #7ea8ee; --accent-fg: #0b1320; --scene: #111920; --ground: #17212a; --dim: #7ea8ee;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e141a; --panel: #121a21; --fg: #e4ebf0; --muted: #8b98a4; --line: #25313c;
+    --accent: #7ea8ee; --accent-fg: #0b1320; --scene: #111920; --ground: #17212a; --dim: #7ea8ee;
+    color-scheme: dark;
+  }
+
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--display); font-variation-settings: "wdth" 100; }
+
+  .app {
+    position: fixed;
+    inset: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px) 0;
+    display: grid;
+    grid-template-columns: 340px minmax(0, 1fr);
+  }
+  .stage { position: relative; min-width: 0; min-height: 0; background: var(--scene); overflow: hidden; }
+  .stage canvas { display: block; outline: none; }
+  .labels { position: absolute; inset: 0; pointer-events: none; }
+  .hint {
+    position: absolute; left: 16px; bottom: 14px; margin: 0;
+    font: 500 11px/1.4 var(--mono); letter-spacing: 0.04em; color: var(--muted);
+    pointer-events: none;
+  }
+  .loading {
+    position: absolute; inset: 0; display: grid; place-items: center; margin: 0;
+    font: 500 12px/1.4 var(--mono); letter-spacing: 0.06em; color: var(--muted);
+  }
+
+  .panel {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    padding-inline: 24px;
+    padding-block: 28px 32px;
+    display: flex; flex-direction: column; gap: 26px;
+    min-width: 0;
+  }
+  .eyebrow {
+    margin: 0 0 6px;
+    font: 500 11px/1.3 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  }
+  h1 {
+    margin: 0;
+    font-size: 52px; line-height: 0.92; font-weight: 800;
+    font-variation-settings: "wdth" 70;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  h1 .reg { color: var(--accent); }
+  .lead { margin: 10px 0 0; font-size: 14px; line-height: 1.5; color: var(--muted); max-width: 38ch; }
+
+  .group { display: flex; flex-direction: column; gap: 8px; }
+  .group-label {
+    margin: 0;
+    font: 500 10.5px/1.2 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  }
+  .seg { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  button {
+    font: 600 13px/1 var(--display); font-variation-settings: "wdth" 85;
+    color: var(--fg); background: transparent; border: 0; padding: 10px 6px; cursor: pointer;
+  }
+  button:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+
+  .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .toggle {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    border: 1px solid var(--line); border-radius: 6px; padding: 10px 10px; text-align: left;
+  }
+  .toggle::after {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    border: 1.5px solid var(--muted); flex: none;
+  }
+  .toggle[aria-pressed="true"] { border-color: var(--accent); }
+  .toggle[aria-pressed="true"]::after { background: var(--accent); border-color: var(--accent); }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  .swatch {
+    width: 34px; height: 34px; border-radius: 50%; padding: 0;
+    border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--line);
+    background: var(--c);
+  }
+  .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--fg); }
+  .swatch-name { margin: 0; font: 500 12px/1.2 var(--mono); color: var(--fg); }
+
+  .specs { margin: 0; display: grid; grid-template-columns: auto 1fr; border-top: 1px solid var(--line); }
+  .specs dt, .specs dd { padding-block: 8px; border-bottom: 1px solid var(--line); margin: 0; }
+  .specs dt { font-size: 13px; color: var(--muted); padding-right: 12px; }
+  .specs dd { font: 500 12.5px/1.35 var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+  .specs dd small { display: block; color: var(--muted); font-size: 11px; }
+  .note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); max-width: 42ch; }
+  .note a { color: var(--accent); }
+
+  .dim-label {
+    font: 500 11px/1 var(--mono); letter-spacing: 0.03em;
+    color: var(--dim); background: color-mix(in srgb, var(--scene) 82%, transparent);
+    padding: 4px 6px; border-radius: 3px; white-space: nowrap;
+  }
+
+  @media (max-width: 760px) {
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56% minmax(0, 1fr); }
+    .stage { grid-row: 1; }
+    .panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); padding-inline: 16px; padding-block: 20px 28px; }
+    h1 { font-size: 42px; }
+  }
+</style>
+
+<div class="app">
+  <aside class="panel" aria-label="Model controls and specifications">
+    <header>
+      <p class="eyebrow">Sling Aircraft · Sling 4 TSi</p>
+      <h1>Sling <span class="reg">TSi</span></h1>
+      <p class="lead">Built from the factory 3-view in the Pilot Operating Handbook. Drag to orbit, scroll or pinch to zoom.</p>
+    </header>
+
+    <div class="group">
+      <p class="group-label">View</p>
+      <div class="seg" role="group" aria-label="Camera view">
+        <button type="button" id="view-quarter" data-view="quarter" aria-pressed="true">3/4</button>
+        <button type="button" id="view-side" data-view="side" aria-pressed="false">Side</button>
+        <button type="button" id="view-top" data-view="top" aria-pressed="false">Top</button>
+        <button type="button" id="view-front" data-view="front" aria-pressed="false">Front</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <p class="group-label">Flaps</p>
+      <div class="seg" role="group" aria-label="Flap setting">
+        <button type="button" id="flap-0" data-flap="0" aria-pressed="true">Up</button>
+        <button type="button" id="flap-10" data-flap="10" aria-pressed="false">10°</button>
+        <button type="button" id="flap-20" data-flap="20" aria-pressed="false">20°</button>
+        <button type="button" id="flap-34" data-flap="34" aria-pressed="false">34°</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <p class="group-label">Systems</p>
+      <div class="toggles">
+        <button type="button" class="toggle" id="t-prop" aria-pressed="true">Engine run</button>
+        <button type="button" class="toggle" id="t-doors" aria-pressed="false">Gull-wing doors</button>
+        <button type="button" class="toggle" id="t-check" aria-pressed="false">Control check</button>
+        <button type="button" class="toggle" id="t-dims" aria-pressed="false">Dimensions</button>
+        <button type="button" class="toggle" id="t-spin" aria-pressed="false">Turntable</button>
+        <button type="button" class="toggle" id="t-lights" aria-pressed="true">Nav lights</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <p class="group-label">Livery</p>
+      <div class="swatches" role="group" aria-label="Livery colour" id="swatches"></div>
+      <p class="swatch-name" id="swatch-name"></p>
+    </div>
+
+    <div class="group">
+      <p class="group-label">Factory data · POH rev 3.1</p>
+      <dl class="specs">
+        <dt>Wingspan</dt><dd>9.544 m<small>31 ft 3.7 in</small></dd>
+        <dt>Overall length</dt><dd>7.175 m<small>23 ft 6 in</small></dd>
+        <dt>Overall height</dt><dd>2.414 m<small>7 ft 11 in</small></dd>
+        <dt>Fuselage width</dt><dd>1.188 m<small>3 ft 11 in</small></dd>
+        <dt>Wing area</dt><dd>11.51 m²<small>MAC 1.302 m · AR 7.79</small></dd>
+        <dt>Dihedral</dt><dd>4.5°<small>tip washout 1.5°</small></dd>
+        <dt>Tailplane span</dt><dd>3.020 m<small>incidence −0.8°</small></dd>
+        <dt>Track · wheelbase</dt><dd>1.950 m · 1.772 m<small>wheelbase as dimensioned on the 3-view</small></dd>
+        <dt>Engine</dt><dd>Rotax 915 iS<small>141 hp, turbocharged</small></dd>
+        <dt>Propeller</dt><dd>Airmaster 3-blade<small>1.83 m (72 in) constant speed</small></dd>
+        <dt>Control travel</dt><dd>Ail ±24° · Rud ±23°<small>elevator 32° up / 22° down · flaps 34°</small></dd>
+        <dt>MTOW</dt><dd>950 kg<small>2,095 lb</small></dd>
+        <dt>Model measures</dt><dd id="bbox">…<small>bounding box, span × length × height</small></dd>
+      </dl>
+    </div>
+
+    <p class="note">Outlines were digitised from the side, front and plan views on POH pages 1-3 and 1-4 and scaled to their dimension lines. The POH does not publish airfoil sections, so those are NACA stand-ins, and small details such as inlets and antennas are placed by eye from the drawing.</p>
+  </aside>
+
+  <main class="stage" id="stage">
+    <p class="loading" id="loading">Loading the 3D model…</p>
+    <p class="hint">Drag to orbit · right-drag to pan · scroll to zoom</p>
+  </main>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+const DEG = Math.PI / 180;
+const P2 = Math.PI / 2;
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/*
+ * Drawing coordinates, all in millimetres, as on the POH 3-view:
+ *   X  aft of the spinner tip, H  height above the ground (static, on its wheels),
+ *   Z  outboard, positive to starboard.
+ * W() converts to scene metres: +x forward, +y up, +z starboard, origin on the ground mid-length.
+ */
+const XC = 3300;
+
+/*
+ * Mesh density. The viewer uses 'standard' (~140k triangles). The Blender export can ask for
+ * 'high' (~1M triangles, 4096 px paint) by setting window.SLING_DETAIL = 'high' before load.
+ */
+const DETAIL = window.SLING_DETAIL === 'high' ? {
+  name: 'high', xNose: 4, xBody: 10, ring: [32, 64, 6, 128], af: 72, afCtrl: 36, span: 30, tipN: 40,
+  tailSpan: 20, tailAf: 60, pant: [128, 96], tyre: [48, 128], hub: 64, spinner: [160, 80], blade: [24, 60],
+  lamp: [32, 24], sweep: [64, 60], inlet: [16, 16], dorsal: [10, 24], tex: 4096,
+} : {
+  name: 'standard', xNose: 12, xBody: 25, ring: [16, 30, 3, 64], af: 26, afCtrl: 12, span: Infinity, tipN: 5,
+  tailSpan: Infinity, tailAf: 26, pant: [36, 28], tyre: [16, 40], hub: 20, spinner: [40, 20], blade: [10, 16],
+  lamp: [16, 12], sweep: [20, 0], inlet: [8, 6], dorsal: [40, 8], tex: 2048,
+};
+// Stations at the given knots, plus evenly spaced ones every `step` mm between the first and last.
+function spanStations(knots, step) {
+  const s = [...knots];
+  if (Number.isFinite(step)) for (let v = knots[0] + step; v < knots[knots.length - 1]; v += step) s.push(v);
+  s.sort((a, b) => a - b);
+  return s.filter((v, i) => i === 0 || v - s[i - 1] > 1e-6);
+}
+const W = (X, H, Z = 0) => new THREE.Vector3((XC - X) / 1000, H / 1000, Z / 1000);
+
+/* ---------- math helpers ---------- */
+function smoothFn(pts) {
+  // Monotone cubic (Fritsch–Carlson) through [x, y] pairs sorted by x.
+  const n = pts.length, xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const d = [], m = new Array(n);
+  for (let i = 0; i < n - 1; i++) d.push((ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]));
+  m[0] = d[0]; m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+    const a = m[i] / d[i], b = m[i + 1] / d[i], s = a * a + b * b;
+    if (s > 9) { const t = 3 / Math.sqrt(s); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; }
+  }
+  return x => {
+    if (x <= xs[0]) return ys[0];
+    if (x >= xs[n - 1]) return ys[n - 1];
+    let i = 0; while (x > xs[i + 1]) i++;
+    const h = xs[i + 1] - xs[i], t = (x - xs[i]) / h, t2 = t * t, t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * h * m[i]
+         + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h * m[i + 1];
+  };
+}
+const spow = (v, e) => Math.sign(v) * Math.pow(Math.abs(v), e);
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// Names carry through to the exported glTF, so parts arrive in Blender as labelled objects.
+const named = (obj, name) => { obj.name = name; return obj; };
+
+/* ---------- geometry builders ---------- */
+function meshFromArrays(pos, idx, uv) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  if (uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+// Closed rings lofted in order, with flat caps at both ends.
+function loftRings(rings, caps = true) {
+  const R = rings.length, M = rings[0].length, cols = M + 1;
+  const pos = [], idx = [];
+  for (const ring of rings) for (let j = 0; j < cols; j++) { const p = ring[j % M]; pos.push(p.x, p.y, p.z); }
+  for (let i = 0; i < R - 1; i++) for (let j = 0; j < M; j++) {
+    const a = i * cols + j, b = a + 1, c = a + cols, d = c + 1;
+    idx.push(a, c, b, b, c, d);
+  }
+  if (caps) for (const ring of [rings[0], rings[R - 1]]) {
+    const base = pos.length / 3, cen = new THREE.Vector3();
+    ring.forEach(p => cen.add(p)); cen.divideScalar(M);
+    pos.push(cen.x, cen.y, cen.z);
+    ring.forEach(p => pos.push(p.x, p.y, p.z));
+    for (let j = 0; j < M; j++) idx.push(base, base + 1 + j, base + 1 + (j + 1) % M);
+  }
+  return meshFromArrays(pos, idx);
+}
+
+function nacaFn(m, p, t) {
+  return u => {
+    const yt = 5 * t * (0.2969 * Math.sqrt(u) - 0.126 * u - 0.3516 * u * u + 0.2843 * u ** 3 - 0.1036 * u ** 4);
+    let yc = 0;
+    if (m > 0) yc = u < p ? m / (p * p) * (2 * p * u - u * u) : m / ((1 - p) ** 2) * ((1 - 2 * p) + 2 * p * u - u * u);
+    return [yc + yt, yc - yt];
+  };
+}
+// Closed loop over chord fractions ua..ub: upper surface TE→LE, then lower LE→TE.
+function afLoop(af, ua, ub, N) {
+  const up = [], lo = [];
+  for (let i = 0; i <= N; i++) {
+    const u = ua + (ub - ua) * (1 - Math.cos(Math.PI * i / N)) / 2;
+    const [yu, yl] = af(u); up.push([u, yu]); lo.push([u, yl]);
+  }
+  const loop = [];
+  for (let i = N; i >= 0; i--) loop.push(up[i]);
+  for (let i = ua === 0 ? 1 : 0; i <= N; i++) loop.push(lo[i]);
+  return loop;
+}
+
+/*
+ * A lifting surface through stations. Each station carries its own chord-fraction
+ * range [ua, ub] so hinge lines can follow the drawing rather than a fixed percentage.
+ */
+function surfaceMesh({ stations, map, af, range, N = DETAIL.af, side = 1, mat }) {
+  const rings = stations.map(st => {
+    const [ua, ub] = range(st);
+    return afLoop(af, ua, ub, N).map(([u, v]) => map(st, u, v, side));
+  });
+  return new THREE.Mesh(loftRings(rings), mat);
+}
+function controlSurface({ stations, map, af, hinge, side = 1, mat, N = DETAIL.afCtrl }) {
+  const mesh = surfaceMesh({ stations, map, af, range: st => [hinge(st), 1], N, side, mat });
+  const hp = st => { const u = hinge(st), [a, b] = af(u); return map(st, u, (a + b) / 2, side); };
+  const p0 = hp(stations[0]), p1 = hp(stations[stations.length - 1]);
+  mesh.geometry.translate(-p0.x, -p0.y, -p0.z);
+  const pivot = new THREE.Group();
+  pivot.position.copy(p0);
+  pivot.add(mesh);
+  const axis = p1.clone().sub(p0).normalize();
+  return { pivot, side, set(angle) { pivot.quaternion.setFromAxisAngle(axis, angle); } };
+}
+
+// Sweep a streamlined section (chord along scene x) along a polyline, for gear legs and struts.
+function sweep(points, chord, thick, mat, n = DETAIL.sweep[0]) {
+  if (DETAIL.sweep[1] && points.length > 2) points = new THREE.CatmullRomCurve3(points).getPoints(DETAIL.sweep[1]);
+  const rings = points.map((p, i) => {
+    const a = points[Math.max(0, i - 1)], b = points[Math.min(points.length - 1, i + 1)];
+    const T = b.clone().sub(a).normalize();
+    const C = new THREE.Vector3(1, 0, 0).addScaledVector(T, -T.x).normalize();
+    const N = new THREE.Vector3().crossVectors(T, C).normalize();
+    const ring = [];
+    for (let k = 0; k < n; k++) {
+      const t = k / n * Math.PI * 2, c = Math.cos(t), s = Math.sin(t);
+      // blunt nose forward, finer tail aft
+      const along = c >= 0 ? c * chord * 0.4 : c * chord * 0.6;
+      ring.push(p.clone().addScaledVector(C, along / 1000).addScaledVector(N, s * thick / 2000 * (c >= 0 ? 1 : 1 + c * 0.6)));
+    }
+    return ring;
+  });
+  return new THREE.Mesh(loftRings(rings), mat);
+}
+
+function rod(p0, p1, r0, r1, mat, seg = 12) {
+  const dir = p1.clone().sub(p0), len = dir.length();
+  const g = new THREE.CylinderGeometry(r1, r0, len, seg);
+  g.translate(0, len / 2, 0);
+  const m = new THREE.Mesh(g, mat);
+  m.position.copy(p0);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  return m;
+}
+
+/* ---------- renderer, scene ---------- */
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.prepend(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.domElement.className = 'labels';
+stage.appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+scene.fog = new THREE.Fog(0xdfe5ea, 24, 60);
+
+const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 200);
+camera.position.set(8.8, 4.2, 9.2);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.0, 0);
+controls.enableDamping = true;
+controls.minDistance = 3.5;
+controls.maxDistance = 34;
+controls.maxPolarAngle = P2 - 0.02;
+controls.autoRotateSpeed = 0.7;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(6, 13, 5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -7, right: 7, top: 7, bottom: -7, near: 1, far: 40 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.02;
+scene.add(sun);
+
+const groundMat = new THREE.MeshStandardMaterial({ color: 0xccd4db, roughness: 1 });
+const ground = new THREE.Mesh(new THREE.CircleGeometry(70, 96).rotateX(-P2), groundMat);
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* ---------- materials ---------- */
+const liveries = [
+  { name: 'Cobalt', hex: '#1f4fa8' },
+  { name: 'Signal red', hex: '#c42a2f' },
+  { name: 'Racing green', hex: '#1c5b43' },
+  { name: 'Graphite', hex: '#383e45' },
+  { name: 'Sunburst', hex: '#e39a0b' },
+];
+const paintProps = { roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.12 };
+function canvasTex(w, h, srgb) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const t = new THREE.CanvasTexture(c);
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+const TW = DETAIL.tex, TH = DETAIL.tex / 2;
+const liveryTex = canvasTex(TW, TH, true);   // paint
+const maskTex = canvasTex(TW, TH, false);    // white = skin, black = window opening
+const glassTex = canvasTex(TW, TH, false);   // inverse of maskTex
+
+const M = {
+  body: new THREE.MeshPhysicalMaterial({ ...paintProps, map: liveryTex, alphaMap: maskTex, alphaTest: 0.5 }),
+  lining: new THREE.MeshStandardMaterial({ color: 0x2b3036, roughness: 0.9, side: THREE.BackSide, alphaMap: maskTex, alphaTest: 0.5 }),
+  glass: new THREE.MeshPhysicalMaterial({
+    color: 0x2a3b48, roughness: 0.04, transparent: true, opacity: 0.4, alphaMap: glassTex,
+    envMapIntensity: 1.6, side: THREE.DoubleSide, depthWrite: false,
+  }),
+  white: new THREE.MeshPhysicalMaterial({ ...paintProps, color: 0xf2f3f4, side: THREE.DoubleSide }),
+  accent: new THREE.MeshPhysicalMaterial({ ...paintProps, color: 0x1f4fa8, side: THREE.DoubleSide }),
+  trim: new THREE.MeshStandardMaterial({ color: 0x1b1f23, roughness: 0.55, side: THREE.DoubleSide }),
+  tire: new THREE.MeshStandardMaterial({ color: 0x141516, roughness: 0.92 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0xb4b9be, metalness: 0.85, roughness: 0.3 }),
+  blade: new THREE.MeshStandardMaterial({ color: 0x1d2024, roughness: 0.45, side: THREE.DoubleSide }),
+  seat: new THREE.MeshStandardMaterial({ color: 0x3a3029, roughness: 0.75 }),
+  floor: new THREE.MeshStandardMaterial({ color: 0x24282d, roughness: 0.95 }),
+  screen: new THREE.MeshStandardMaterial({ color: 0x0b0f14, emissive: 0x2c5f95, emissiveIntensity: 0.9, roughness: 0.2 }),
+};
+
+const plane = new THREE.Group();
+scene.add(plane);
+
+/* ---------- fuselage, from the side and plan views ---------- */
+const XN = 290, XT = 6514; // spinner base (propeller plane) to tail-cone end
+// Upper profile, side view. Cowl, windscreen, roof (1810 over the cabin), turtle deck, tail cone.
+const fTop = smoothFn([[290, 1295], [513, 1325], [754, 1356], [1048, 1376], [1165, 1382], [1356, 1395],
+  [1636, 1532], [1930, 1660], [2071, 1745], [2362, 1797], [2658, 1810], [2952, 1795], [3304, 1752],
+  [3596, 1690], [4096, 1607], [4385, 1553], [4738, 1492], [5100, 1445], [5450, 1400], [5850, 1347],
+  [6200, 1302], [6514, 1255]]);
+// Lower profile, side view. 640 mm keel under the cabin, rising at the tail.
+const fBot = smoothFn([[290, 1045], [400, 955], [530, 866], [760, 790], [1000, 722], [1165, 662],
+  [1400, 648], [3470, 648], [3600, 663], [4100, 715], [4740, 781], [5450, 855], [6200, 933], [6514, 966]]);
+// Half-width, plan view (1188 mm across the cabin).
+const fHW = smoothFn([[290, 130], [400, 240], [530, 336], [760, 402], [1000, 458], [1165, 480],
+  [1360, 502], [1640, 530], [1930, 560], [2070, 575], [2360, 594], [2950, 594], [3300, 585],
+  [3600, 526], [4100, 452], [4390, 398], [4740, 336], [5100, 278], [5450, 218], [5850, 155],
+  [6200, 118], [6514, 70]]);
+// Section exponents. The front view shows a round cabin top (n = 2) over a boxier lower half.
+const fNU = smoothFn([[290, 2], [700, 2.4], [1200, 2.6], [1700, 2.1], [2400, 2], [3500, 2], [5000, 2.2], [6514, 2.2]]);
+const fNL = smoothFn([[290, 2], [700, 2.6], [1200, 3.3], [2000, 4], [3400, 4], [4500, 3], [6514, 2.4]]);
+
+function section(X) {
+  const top = fTop(X), bot = fBot(X), hm = (top + bot) / 2;
+  return { top, bot, hm, up: top - hm, dn: hm - bot, hw: fHW(X), nU: fNU(X), nL: fNL(X) };
+}
+// Point on the skin at angle a (0 = starboard side, π/2 = top), in mm.
+function skinMM(X, a, g = 0) {
+  const s = section(X), c = Math.cos(a), sn = Math.sin(a);
+  const n = sn >= 0 ? s.nU : s.nL;
+  const Z = (s.hw + g) * spow(c, 2 / n);
+  const H = sn >= 0 ? s.hm + (s.up + g) * Math.pow(sn, 2 / n) : s.hm - (s.dn + g) * Math.pow(-sn, 2 / n);
+  return [H, Z];
+}
+const skin = (X, a, g = 0) => { const [H, Z] = skinMM(X, a, g); return W(X, H, Z); };
+
+/*
+ * Ring angles are laid out so the gull-wing door edges fall exactly on grid lines:
+ * the door's lower edge (H = 1250) and its hinge beside the roof spine (|Z| = 75).
+ */
+const DOOR_X0 = 2030, DOOR_X1 = 3020, DOOR_H = 1250, SPINE = 75;
+const [N0, N1, N2, NLOW] = DETAIL.ring;
+function ringAngles(X) {
+  const s = section(X);
+  let aDB = Math.asin(Math.pow(clamp((DOOR_H - s.hm) / s.up, 0.02, 0.95), s.nU / 2));
+  let aSP = Math.acos(Math.pow(clamp(SPINE / s.hw, 0.02, 0.98), s.nU / 2));
+  aDB = clamp(aDB, 0.05, P2 - 0.4);
+  aSP = clamp(aSP, aDB + 0.1, P2 - 0.02);
+  const seg = (a0, a1, n) => Array.from({ length: n }, (_, k) => a0 + (a1 - a0) * k / n);
+  return [...seg(0, aDB, N0), ...seg(aDB, aSP, N1), ...seg(aSP, P2, N2), ...seg(P2, Math.PI - aSP, N2),
+    ...seg(Math.PI - aSP, Math.PI - aDB, N1), ...seg(Math.PI - aDB, Math.PI, N0), ...seg(Math.PI, Math.PI * 2, NLOW), Math.PI * 2];
+}
+const J_DB_R = N0, J_SP_R = N0 + N1, J_SP_L = N0 + N1 + 2 * N2, J_DB_L = N0 + 2 * N1 + 2 * N2;
+
+const XS = (() => {
+  const s = [];
+  for (let X = XN; X < 700; X += DETAIL.xNose) s.push(X);
+  for (let X = 700; X <= XT; X += DETAIL.xBody) s.push(X);
+  s.push(XT, DOOR_X0, DOOR_X1);
+  s.sort((a, b) => a - b);
+  return s.filter((v, i) => i === 0 || v - s[i - 1] > 1);
+})();
+const ANG = XS.map(ringAngles);
+const I_D0 = XS.indexOf(DOOR_X0), I_D1 = XS.indexOf(DOOR_X1);
+const inDoorR = (i, j) => i >= I_D0 && i < I_D1 && j >= J_DB_R && j < J_SP_R;
+const inDoorL = (i, j) => i >= I_D0 && i < I_D1 && j >= J_SP_L && j < J_DB_L;
+
+function skinGeo(keep, g = 0, i0 = 0, i1 = XS.length - 1) {
+  const C = ANG[0].length, pos = [], uv = [], idx = [];
+  for (let i = i0; i <= i1; i++) for (let j = 0; j < C; j++) {
+    const X = XS[i], a = ANG[i][j], p = skin(X, a, g);
+    pos.push(p.x, p.y, p.z);
+    uv.push((X - XN) / (XT - XN), a / (Math.PI * 2));
+  }
+  for (let i = i0; i < i1; i++) for (let j = 0; j < C - 1; j++) {
+    if (!keep(i, j)) continue;
+    const a = (i - i0) * C + j, b = a + 1, c = a + C, d = c + 1;
+    idx.push(a, b, c, b, d, c);   // X runs aft while scene x runs forward, so wind this way for outward faces
+  }
+  const geo = meshFromArrays(pos, idx, uv);
+  // weld normals across the a = 0 / 2π seam
+  const n = geo.attributes.normal, v = new THREE.Vector3(), w = new THREE.Vector3();
+  for (let r = 0; r <= i1 - i0; r++) {
+    const a = r * C, b = r * C + C - 1;
+    v.fromBufferAttribute(n, a); w.fromBufferAttribute(n, b); v.add(w).normalize();
+    n.setXYZ(a, v.x, v.y, v.z); n.setXYZ(b, v.x, v.y, v.z);
+  }
+  return geo;
+}
+
+const hullKeep = (i, j) => !inDoorR(i, j) && !inDoorL(i, j);
+const hullGeo = skinGeo(hullKeep);
+plane.add(named(new THREE.Mesh(hullGeo, M.body), 'Fuselage'), named(new THREE.Mesh(hullGeo, M.lining), 'Fuselage_lining'));
+// Glass shell only over the band that holds windows: windscreen base to rear-window end, above the door line.
+const I_G0 = XS.findIndex(X => X >= 1340), I_G1 = XS.findIndex(X => X >= 3640);
+const glassKeep = (i, j) => hullKeep(i, j) && j >= J_DB_R && j < J_DB_L;
+const glassFixed = named(new THREE.Mesh(skinGeo(glassKeep, 3, I_G0, I_G1), M.glass), 'Windscreen_and_windows');
+glassFixed.renderOrder = 2;
+plane.add(glassFixed);
+
+// tail-cone end cap
+{
+  const ring = ANG[ANG.length - 1].slice(0, -1).map(a => skin(XT, a));
+  plane.add(named(new THREE.Mesh(loftRings([ring, ring]), M.white), 'Tailcone_cap'));
+}
+
+// Gull-wing doors, hinged beside the roof spine (POH 7.7: two gullwing doors).
+function makeDoor(inDoor, jHinge, dir, name) {
+  const pivot = named(new THREE.Group(), name);
+  const p0 = skin(DOOR_X0, ANG[I_D0][jHinge]), p1 = skin(DOOR_X1, ANG[I_D1][jHinge]);
+  for (const [mat, g, order, part] of [[M.body, 0, 0, 'skin'], [M.lining, 0, 0, 'lining'], [M.glass, 3, 2, 'glass']]) {
+    const geo = skinGeo(inDoor, g, I_D0, I_D1);
+    geo.translate(-p0.x, -p0.y, -p0.z);
+    const m = named(new THREE.Mesh(geo, mat), `${name}_${part}`);
+    m.renderOrder = order;
+    pivot.add(m);
+  }
+  pivot.position.copy(p0);
+  plane.add(pivot);
+  const axis = p1.clone().sub(p0).normalize();
+  return t => pivot.quaternion.setFromAxisAngle(axis, dir * t * 80 * DEG);
+}
+const doors = [makeDoor(inDoorR, J_SP_R, 1, 'Door_R'), makeDoor(inDoorL, J_SP_L, -1, 'Door_L')];
+
+/*
+ * Paint, window openings and panel lines are drawn per texel in real (X, H, Z),
+ * so their edges follow the 3-view instead of the mesh grid.
+ */
+function roundRect(X, H, x0, x1, h0, h1, r) {
+  if (X < x0 || X > x1 || H < h0 || H > h1) return false;
+  const cx = clamp(X, x0 + r, x1 - r), ch = clamp(H, h0 + r, h1 - r);
+  return (X - cx) ** 2 + (H - ch) ** 2 <= r * r;
+}
+function windowAt(X, H, Z, grow = 0) {
+  const az = Math.abs(Z);
+  // windscreen: base sweeps from 1356 mm on the centreline back to the door pillar at the sides
+  const base = 1356 + 600 * Math.pow(Math.min(1, az / 570), 2.2);
+  if (X > base - grow && X < 2000 + grow && H > 1300 - grow) return true;
+  if (az < SPINE + 20 - grow) return false;                       // roof spine between the doors
+  // front (door) window and rear quarter window, wrapping over the roof to the spine
+  if (roundRect(X, Math.min(H, 1700), 2090 - grow, 2980 + grow, 1330 - grow, 1900, 90 + grow)) return true;
+  const rearEnd = 3530 + (H - 1330) * 0.19;
+  if (roundRect(X, Math.min(H, 1650), 3070 - grow, rearEnd + grow, 1330 - grow, 1900, 110 + grow)) return true;
+  return false;
+}
+const cover = d => clamp(d / 5 + 0.5, 0, 1);
+const mix = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
+function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+
+function paintSkin(hex) {
+  const ctx = liveryTex.image.getContext('2d'), img = ctx.createImageData(TW, TH), d = img.data;
+  const mctx = maskTex.image.getContext('2d'), mimg = mctx.createImageData(TW, TH), md = mimg.data;
+  const gctx = glassTex.image.getContext('2d'), gimg = gctx.createImageData(TW, TH), gd = gimg.data;
+  const white = [243, 244, 245], dark = [27, 31, 35], seam = [150, 156, 162], acc = hexRgb(hex);
+  for (let px = 0; px < TW; px++) {
+    const X = XN + (px + 0.5) / TW * (XT - XN);
+    const s = section(X);
+    const mid = 985 + 0.068 * (X - 1165), w = 36 + 0.024 * (X - 290), pin = mid - w - 38;
+    for (let py = 0; py < TH; py++) {
+      const a = (1 - (py + 0.5) / TH) * Math.PI * 2, sn = Math.sin(a), c = Math.cos(a);
+      const n = sn >= 0 ? s.nU : s.nL;
+      const Z = s.hw * spow(c, 2 / n);
+      const H = sn >= 0 ? s.hm + s.up * Math.pow(sn, 2 / n) : s.hm - s.dn * Math.pow(-sn, 2 / n);
+      const band = Math.max(cover(w - Math.abs(H - mid)), cover(9 - Math.abs(H - pin)));
+      let col = mix(white, acc, band);
+      if (windowAt(X, H, Z, 45)) col = dark;                                   // window surrounds
+      const isWin = windowAt(X, H, Z);
+      // door gaps: front and rear edges and the lower edge at 1250
+      const onDoor = H > DOOR_H - 4 && Math.abs(Z) > SPINE - 4;
+      if (onDoor && (Math.abs(X - DOOR_X0) < 4 || Math.abs(X - DOOR_X1) < 4)) col = seam;
+      if (X > DOOR_X0 && X < DOOR_X1 && Math.abs(H - DOOR_H) < 4 && sn > 0) col = seam;
+      // firewall / cowling joint
+      if (Math.abs(X - 1165) < 3 && H < 1380) col = seam;
+      // baggage door, aft of the rear window (POH 2.17.3)
+      if (sn > -0.2 && X > 3540 && X < 3995 && H > 963 && H < 1288) {
+        const edge = Math.min(X - 3540, 3995 - X, H - 963, 1288 - H);
+        if (edge < 5) col = seam;
+        if (Math.abs(X - 3950) < 22 && Math.abs(H - 1125) < 45) col = dark;    // latch
+      }
+      const k = (py * TW + px) * 4;
+      d[k] = col[0]; d[k + 1] = col[1]; d[k + 2] = col[2]; d[k + 3] = 255;
+      const m = isWin ? 0 : 255;
+      md[k] = md[k + 1] = md[k + 2] = m; md[k + 3] = 255;
+      gd[k] = gd[k + 1] = gd[k + 2] = 255 - m; gd[k + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0); mctx.putImageData(mimg, 0, 0); gctx.putImageData(gimg, 0, 0);
+  liveryTex.needsUpdate = maskTex.needsUpdate = glassTex.needsUpdate = true;
+}
+
+// Nose X at which a point (H, Z) first lies inside the cowling, for placing inlets on its face.
+function noseFace(H, Z) {
+  const inside = X => {
+    const s = section(X), n = H >= s.hm ? s.nU : s.nL, half = H >= s.hm ? s.up : s.dn;
+    if (Math.abs(H - s.hm) > half) return false;
+    return Math.abs(Z) <= s.hw * Math.pow(1 - Math.pow(Math.abs(H - s.hm) / half, n), 1 / n);
+  };
+  for (let X = XN; X < 1200; X += 4) {
+    if (!inside(X)) continue;
+    // refine to a fraction of a millimetre so projected inlets sit smoothly on the cowling
+    let lo = Math.max(XN, X - 4), hi = X;
+    for (let k = 0; k < 14; k++) { const m = (lo + hi) / 2; if (inside(m)) hi = m; else lo = m; }
+    return hi;
+  }
+  return 1200;
+}
+// Rounded-rectangle inlet whose vertices are projected onto the cowling so it hugs the curved nose.
+function inlet(H, Z, w, h, r) {
+  const shape = new THREE.Shape(), x0 = -w / 2, y0 = -h / 2;
+  shape.moveTo(x0 + r, y0); shape.lineTo(x0 + w - r, y0); shape.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+  shape.lineTo(x0 + w, y0 + h - r); shape.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+  shape.lineTo(x0 + r, y0 + h); shape.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+  shape.lineTo(x0, y0 + r); shape.quadraticCurveTo(x0, y0, x0 + r, y0);
+  const outline = shape.getPoints(DETAIL.inlet[1]).slice(0, -1), K = DETAIL.inlet[0];
+  const rings = [];
+  for (let k = 1; k <= K; k++) rings.push(outline.map(p => {
+    const Zv = Z + p.x * k / K, Hv = H + p.y * k / K;
+    return W(noseFace(Hv, Zv) - 5, Hv, Zv);
+  }));
+  const centre = W(noseFace(H, Z) - 5, H, Z);
+  const pos = [centre.x, centre.y, centre.z], idx = [], n = outline.length;
+  rings.forEach(ring => ring.forEach(p => pos.push(p.x, p.y, p.z)));
+  for (let j = 0; j < n; j++) idx.push(0, 1 + j, 1 + (j + 1) % n);
+  for (let k = 0; k < K - 1; k++) for (let j = 0; j < n; j++) {
+    const a = 1 + k * n + j, b = 1 + k * n + (j + 1) % n, c = a + n, d = b + n;
+    idx.push(a, c, b, b, c, d);
+  }
+  plane.add(named(new THREE.Mesh(meshFromArrays(pos, idx), M.trim), 'Cowl_inlet'));
+}
+// Front view: two air inlets beside the spinner, the radiator/intercooler opening below it.
+inlet(1238, 232, 130, 100, 40);
+inlet(1238, -232, 130, 100, 40);
+inlet(975, 0, 380, 250, 60);
+plane.add(named(rod(W(1000, 700, 170), W(1180, 600, 175), 0.028, 0.026, M.metal), 'Exhaust'));   // exhaust
+plane.add(named(rod(W(4090, 1600), W(4570, 2027), 0.006, 0.002, M.trim, 6), 'Antenna'));          // comm antenna, side view
+
+/* ---------- cabin interior ---------- */
+{
+  const floor = named(new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.03, 1.02), M.floor), 'Cabin_floor');
+  floor.position.copy(W(2950, 860));
+  plane.add(floor);
+  for (const [X, Z] of [[2700, 245], [2700, -245], [3480, 245], [3480, -245]]) {
+    const seat = `Seat_${X < 3000 ? 'front' : 'rear'}_${Z > 0 ? 'R' : 'L'}`;
+    const cushion = named(new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.1, 0.42), M.seat), `${seat}_cushion`);
+    cushion.position.copy(W(X, 930, Z));
+    const back = named(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.58, 0.42), M.seat), `${seat}_back`);
+    back.position.copy(W(X + 260, 1190, Z));
+    back.rotation.z = 0.22;
+    plane.add(cushion, back);
+  }
+  const panel = named(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.26, 0.96), M.trim), 'Instrument_panel');
+  panel.position.copy(W(1960, 1290));
+  plane.add(panel);
+  for (const Z of [-230, 230]) {
+    const scr = named(new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.19).rotateY(-P2), M.screen), `Display_${Z > 0 ? 'R' : 'L'}`);
+    scr.position.copy(W(2021, 1300, Z));
+    plane.add(scr);
+    plane.add(named(rod(W(2320, 880, Z), W(2290, 1200, Z), 0.014, 0.011, M.trim, 8), `Control_stick_${Z > 0 ? 'R' : 'L'}`));
+  }
+}
+
+/* ---------- wings, from the plan and front views ---------- */
+// Planform: 1518 root chord to z = 972, straight taper to 1088 at z = 4500, rounded tip to 4772.
+const wingAF = nacaFn(0.02, 0.4, 0.13);
+const DIH = Math.tan(4.5 * DEG);
+function wingStation(z) {
+  const f = clamp((z - 972) / 3528, 0, 1);
+  return {
+    z, xle: 1908 + 136 * f, c: 1512 - 424 * f,
+    h: 700 + Math.max(0, z - 594) * DIH,
+    inc: 1.5 * DEG * (1 - z / 4772),                     // 1.5° washout root to tip
+  };
+}
+function mapWing(st, u, v, side) {
+  const xq = st.xle + 0.25 * st.c;
+  const dx = u * st.c - 0.25 * st.c, dy = v * st.c;       // dx positive aft
+  const ci = Math.cos(st.inc), si = Math.sin(st.inc);
+  return W(xq + dx * ci + dy * si, st.h + dy * ci - dx * si, st.z * side);
+}
+// Flap and aileron hinge line, plan view: nearly straight at X ≈ 2904–2920.
+const wingHinge = st => (2904 + 16 * clamp((st.z - 972) / 3528, 0, 1) - st.xle) / st.c;
+const flaps = [], ailerons = [], elevators = [];
+const navPos = {};
+// Rounded tip, plan and front views: leading edge curls back and the tip turns up ~95 mm.
+const tipLE = smoothFn([[4500, 2044], [4650, 2090], [4730, 2200], [4760, 2420], [4772, 2760]]);
+const tipC = smoothFn([[4500, 1088], [4650, 1042], [4730, 930], [4760, 705], [4772, 360]]);
+const tipUp = smoothFn([[4500, 0], [4650, 20], [4730, 50], [4760, 80], [4772, 95]]);
+const tipStations = () => Array.from({ length: DETAIL.tipN }, (_, k) => {
+  const z = 4500 + 272 * Math.sin(k / (DETAIL.tipN - 1) * P2);   // bunched toward the tip
+  const st = wingStation(z);
+  return { ...st, xle: tipLE(z), c: tipC(z), h: st.h + tipUp(z) };
+});
+for (const side of [1, -1]) {
+  const sfx = side === 1 ? 'R' : 'L';
+  const stns = zs => spanStations(zs, DETAIL.span).map(wingStation);
+  plane.add(named(surfaceMesh({ stations: stns([0, 594, 972, 1600, 2300, 3000, 3700, 4500]), map: mapWing, af: wingAF,
+    range: st => [0, wingHinge(st) - 0.012], side, mat: M.white }), `Wing_${sfx}`));
+  const tip = tipStations();
+  plane.add(named(surfaceMesh({ stations: tip, map: mapWing, af: wingAF, range: () => [0, 1], side, mat: M.white }), `Wing_${sfx}_tip`));
+  navPos[side] = mapWing(tip[tip.length - 1], 0.1, 0.02, side).add(new THREE.Vector3(0, 0, -0.03 * side)); // lens stays inside the 9.544 m span
+
+  const flap = controlSurface({ stations: stns([610, 972, 1800, 2600, 3250]), map: mapWing, af: wingAF, hinge: wingHinge, side, mat: M.white });
+  const ail = controlSurface({ stations: stns([3290, 3900, 4495]), map: mapWing, af: wingAF, hinge: wingHinge, side, mat: M.white });
+  plane.add(named(flap.pivot, `Flap_${sfx}`), named(ail.pivot, `Aileron_${sfx}`));
+  flaps.push(flap); ailerons.push(ail);
+}
+
+/* ---------- empennage ---------- */
+// Tailplane, plan view: 3020 span, 920 root chord, elevator hinge straight at X ≈ 6360.
+const tailAF = nacaFn(0, 0, 0.10);
+const stabStation = z => { const f = z / 1510; return { z, xle: 5856 + 180 * f, c: 936 - 300 * f, h: 1150, inc: -0.8 * DEG }; };
+const elevHinge = st => (6360 - st.xle) / st.c;
+for (const side of [1, -1]) {
+  const sfx = side === 1 ? 'R' : 'L';
+  const tss = zs => spanStations(zs, DETAIL.tailSpan).map(stabStation);
+  plane.add(named(surfaceMesh({ stations: tss([0, 200, 800, 1510]), map: mapWing, af: tailAF, N: DETAIL.tailAf,
+    range: st => [0, elevHinge(st) - 0.015], side, mat: M.white }), `Stabiliser_${sfx}`));
+  const el = controlSurface({ stations: tss([220, 800, 1505]), map: mapWing, af: tailAF, hinge: elevHinge, side, mat: M.white });
+  plane.add(named(el.pivot, `Elevator_${sfx}`));
+  elevators.push(el);
+}
+// Fin and rudder, side view. Leading edge (6095,1695)→(6553,2380); hinge (6517,983)→(6817,2373);
+// rudder trailing edge (6976,1092)→(7175,2407).
+const finLE = H => 6095 + (H - 1695) * (458 / 685);
+const finTE = H => H >= 1092 ? 6976 + (H - 1092) * (199 / 1315) : 6517 + (H - 983) * (459 / 109);
+const finHingeX = H => 6517 + (H - 983) * (300 / 1390);
+const finStation = H => ({ h: H, xle: finLE(H), c: finTE(H) - finLE(H) });
+const mapFin = (st, u, v) => W(st.xle + u * st.c, st.h, v * st.c);
+const finAF = nacaFn(0, 0, 0.09);
+const finHinge = st => (finHingeX(st.h) - st.xle) / st.c;
+const fss = hs => spanStations(hs, DETAIL.tailSpan).map(finStation);
+plane.add(named(surfaceMesh({ stations: fss([1260, 1700, 2100, 2414]), map: mapFin, af: finAF, N: DETAIL.tailAf,
+  range: st => [0, finHinge(st) - 0.012], mat: M.white }), 'Fin'));
+const rudder = controlSurface({ stations: fss([1030, 1092, 1500, 2000, 2410]), map: mapFin, af: finAF, hinge: finHinge, mat: M.accent });
+plane.add(named(rudder.pivot, 'Rudder'));
+// Dorsal fillet: runs from the turtle deck at X 4740 into the fin leading edge.
+{
+  const dTop = smoothFn([[4740, 1496], [5090, 1502], [5443, 1509], [5700, 1545], [5900, 1602], [6050, 1668], [6122, 1735]]);
+  const rings = [];
+  const [dStep, dN] = DETAIL.dorsal;
+  for (let X = 4740; X <= 6122; X += dStep) {
+    const top = dTop(X), bot = fTop(X) - 25, w = lerp(5, 28, (X - 4740) / 1382), ring = [];
+    for (let k = 0; k <= dN; k++) { const t = k / dN * Math.PI; ring.push(W(X, top - w + Math.sin(t) * w, Math.cos(t) * w)); }
+    ring.push(W(X, bot, -w), W(X, bot, w));
+    rings.push(ring);
+  }
+  plane.add(named(new THREE.Mesh(loftRings(rings), M.white), 'Dorsal_fillet'));
+}
+
+/* ---------- landing gear: nose axle 780 aft of the spinner, mains 1772 further, track 1950 ---------- */
+function pantGeo(len, height, width, fwd) {
+  // teardrop around the x axis: blunt nose, fine tail
+  const pts = [];
+  const [seg, n] = DETAIL.pant;
+  for (let i = 0; i <= n; i++) { const t = i / n; pts.push(new THREE.Vector2(0.5 * Math.sin(Math.PI * Math.pow(t, 0.62)), 0.5 - t)); }
+  return new THREE.LatheGeometry(pts, seg).rotateZ(-P2).scale(len / 1000, height / 1000, width / 1000)
+    .translate((fwd - len / 2) / 1000, 0, 0);
+}
+function wheel(X, Z, R, width, pant) {
+  const g = new THREE.Group();
+  const tire = new THREE.Mesh(new THREE.TorusGeometry((R - width * 0.42) / 1000, width * 0.42 / 1000, ...DETAIL.tyre), M.tire);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.42 / 1000, R * 0.42 / 1000, width * 0.7 / 1000, DETAIL.hub).rotateX(P2), M.metal);
+  // fairing nose sits `fwd` mm ahead of the axle
+  const p = new THREE.Mesh(pantGeo(pant.len, pant.h, pant.w, pant.fwd), M.white);
+  p.position.set(0, (pant.bot + pant.h / 2 - R) / 1000, 0);
+  named(tire, 'Tyre'); named(hub, 'Hub'); named(p, 'Wheel_fairing');
+  g.add(tire, hub, p);
+  g.position.copy(W(X, R, Z));
+  return g;
+}
+// Mains: 15x6.00-6 tyres (Ø 381 mm). Nose: 5.00-5 (Ø 356 mm). Fairing sizes from side/front views.
+for (const side of [1, -1]) {
+  const sfx = side === 1 ? 'R' : 'L';
+  plane.add(named(wheel(2552, 975 * side, 190, 150, { len: 760, h: 312, w: 240, fwd: 330, bot: 50 }), `Main_wheel_${sfx}`));
+  const leg = [[470, 690], [560, 662], [650, 612], [730, 548], [800, 472], [860, 402], [905, 342], [935, 290]]
+    .map(([z, H]) => W(2530, H, z * side));
+  plane.add(named(sweep(leg, 170, 38, M.white), `Main_gear_leg_${sfx}`));
+}
+plane.add(named(wheel(780, 0, 178, 127, { len: 662, h: 313, w: 200, fwd: 230, bot: 60 }), 'Nose_wheel'));
+plane.add(named(sweep([W(960, 700), W(950, 560), W(930, 380)], 190, 60, M.white), 'Nose_gear_leg'));
+
+/* ---------- propeller: Airmaster, 3 blades, Ø 1830 ---------- */
+const prop = named(new THREE.Group(), 'Propeller');
+prop.position.copy(W(XN, 1170));
+plane.add(prop);
+{
+  const pts = [];
+  const [sSeg, sN] = DETAIL.spinner;
+  for (let i = 0; i <= sN; i++) { const t = i / sN; pts.push(new THREE.Vector2(0.13 * Math.pow(1 - Math.pow(t, 1.7), 0.6), 0.29 * t)); }
+  prop.add(named(new THREE.Mesh(new THREE.LatheGeometry(pts, sSeg).rotateZ(-P2), M.accent), 'Spinner'));
+  const [bN, bSt] = DETAIL.blade;
+  const af = nacaFn(0, 0, 0.12), loop = afLoop(af, 0, 1, bN);
+  const chord = smoothFn([[0, 0.075], [0.3, 0.12], [0.8, 0.09], [1, 0.04]]);
+  const rings = [];
+  for (let i = 0; i <= bSt; i++) {
+    const f = i / bSt, r = lerp(0.12, 0.915, f), c = chord(f), b = lerp(55, 15, f) * DEG;
+    const ch = [Math.sin(b), Math.cos(b)], nn = [Math.cos(b), -Math.sin(b)];
+    rings.push(loop.map(([u, v]) => new THREE.Vector3(
+      0.06 + ch[0] * (0.35 - u) * c + nn[0] * v * c, r, ch[1] * (0.35 - u) * c + nn[1] * v * c)));
+  }
+  const bladeGeo = loftRings(rings);
+  for (let k = 0; k < 3; k++) {
+    const b = named(new THREE.Mesh(bladeGeo, M.blade), `Blade_${k + 1}`);
+    b.rotation.x = k * 2 * Math.PI / 3;
+    prop.add(b);
+  }
+}
+const discMat = new THREE.MeshBasicMaterial({ color: 0x1d2024, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+const disc = new THREE.Mesh(new THREE.RingGeometry(0.14, 0.915, 64).rotateY(P2), discMat);
+disc.position.copy(W(XN - 60, 1170));
+plane.add(disc);
+
+/* ---------- lights ---------- */
+function lamp(color, pos, r = 0.024) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, ...DETAIL.lamp), new THREE.MeshBasicMaterial({ color, name: 'Light_' + new THREE.Color(color).getHexString() }));
+  m.position.copy(pos);
+  plane.add(m);
+  return m;
+}
+const navR = named(lamp(0x33ff77, navPos[1]), 'Nav_light_R');
+const navL = named(lamp(0xff3030, navPos[-1]), 'Nav_light_L');
+const strobes = [1, -1].map(s => named(lamp(0xffffff, navPos[s].clone().add(new THREE.Vector3(-0.08, 0, 0)), 0.02), `Strobe_${s === 1 ? 'R' : 'L'}`));
+
+plane.traverse(o => {
+  if (o.isMesh && o.material !== M.glass && !o.material.isMeshBasicMaterial) { o.castShadow = true; o.receiveShadow = true; }
+});
+
+// Report the model's own overall dimensions next to the factory figures.
+{
+  const box = new THREE.Box3();
+  plane.updateMatrixWorld(true);
+  plane.traverse(o => { if (o.isMesh && o !== disc && !o.material.isMeshBasicMaterial) box.expandByObject(o, true); });
+  const size = box.getSize(new THREE.Vector3());
+  document.getElementById('bbox').firstChild.textContent =
+    `${size.z.toFixed(3)} × ${size.x.toFixed(3)} × ${size.y.toFixed(3)} m`;
+}
+
+/* ---------- dimension overlay ---------- */
+const dims = new THREE.Group();
+dims.visible = false;
+scene.add(dims);
+const dimMat = new THREE.LineBasicMaterial({ color: 0x1f4fa8 });
+const dimLabels = [];
+function dimLine(a, b, tick, text) {
+  const pts = [a, b, a.clone().add(tick), a.clone().sub(tick), b.clone().add(tick), b.clone().sub(tick)];
+  dims.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), dimMat));
+  const el = document.createElement('div');
+  el.className = 'dim-label';
+  el.textContent = text;
+  const obj = new CSS2DObject(el);
+  obj.position.copy(a).add(b).multiplyScalar(0.5);
+  obj.visible = false;
+  dims.add(obj);
+  dimLabels.push(obj);
+}
+const guide = (a, b) => dims.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([a, b]), dimMat));
+{
+  const g = 5, tx = new THREE.Vector3(0.12, 0, 0), tz = new THREE.Vector3(0, 0, 0.12);
+  dimLine(W(1100, g, -4772), W(1100, g, 4772), tx, 'Wingspan 9.544 m');
+  for (const s of [1, -1]) guide(navPos[s], W(1100, g, 4772 * s));
+  dimLine(W(0, g, -2500), W(7175, g, -2500), tz, 'Overall length 7.175 m');
+  guide(W(0, 1170), W(0, g, -2500));
+  dimLine(W(7450, 0), W(7450, 2414), tx, 'Overall height 2.414 m');
+  guide(W(7175, 2414), W(7450, 2414));
+  dimLine(W(2552, g, -975), W(2552, g, 975), tx, 'Track 1.950 m');
+  dimLine(W(780, g, 1600), W(2552, g, 1600), tz, 'Wheelbase 1.772 m');
+}
+
+/* ---------- theme ---------- */
+function applyTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const get = (k, f) => (cs.getPropertyValue(k).trim() || f);
+  const sceneCol = new THREE.Color(get('--scene', '#dfe5ea'));
+  scene.background = sceneCol;
+  scene.fog.color.copy(sceneCol);
+  groundMat.color.set(get('--ground', '#ccd4db'));
+  dimMat.color.set(get('--dim', '#1f4fa8'));
+}
+applyTheme();
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+/* ---------- UI state ---------- */
+const state = {
+  flapTarget: 0, flap: 0,
+  doorTarget: 0, door: 0,
+  engine: !reduceMotion, rpm: 0,
+  check: false, checkT: 0, ail: 0, ele: 0, rud: 0,
+  lights: true,
+};
+function pressGroup(selector, btn) {
+  document.querySelectorAll(selector).forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+}
+document.querySelectorAll('[data-flap]').forEach(b => b.addEventListener('click', () => {
+  state.flapTarget = Number(b.dataset.flap); pressGroup('[data-flap]', b);
+}));
+const views = {
+  quarter: { pos: [8.8, 4.2, 9.2], target: [0, 1.0, 0] },
+  side:    { pos: [0, 1.2, 14.5], target: [0, 1.1, 0] },
+  top:     { pos: [0.001, 17, 0], target: [0, 1, 0] },
+  front:   { pos: [14, 1.25, 0], target: [0, 1.1, 0] },
+};
+let tween = null;
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
+  const v = views[b.dataset.view];
+  pressGroup('[data-view]', b);
+  tween = { t: reduceMotion ? 1 : 0, from: camera.position.clone(), fromT: controls.target.clone(),
+            to: new THREE.Vector3(...v.pos), toT: new THREE.Vector3(...v.target) };
+}));
+function toggle(id, initial, fn) {
+  const el = document.getElementById(id);
+  el.setAttribute('aria-pressed', String(initial));
+  el.addEventListener('click', () => {
+    const on = el.getAttribute('aria-pressed') !== 'true';
+    el.setAttribute('aria-pressed', String(on));
+    fn(on);
+  });
+}
+toggle('t-prop', state.engine, on => { state.engine = on; });
+toggle('t-doors', false, on => { state.doorTarget = on ? 1 : 0; });
+toggle('t-check', false, on => { state.check = on; });
+toggle('t-dims', false, on => { dims.visible = on; dimLabels.forEach(l => { l.visible = on; }); });
+toggle('t-spin', false, on => { controls.autoRotate = on; });
+toggle('t-lights', true, on => { state.lights = on; });
+
+const swWrap = document.getElementById('swatches'), swName = document.getElementById('swatch-name');
+function setLivery(l, btn) {
+  paintSkin(l.hex);
+  M.accent.color.set(l.hex);
+  swName.textContent = l.name;
+  swWrap.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+}
+liveries.forEach((l, i) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'swatch'; b.id = 'livery-' + i;
+  b.style.setProperty('--c', l.hex);
+  b.setAttribute('aria-label', l.name + ' livery');
+  b.addEventListener('click', () => setLivery(l, b));
+  swWrap.appendChild(b);
+  if (i === 0) setLivery(l, b);
+});
+
+/* ---------- glTF export for Blender ---------- */
+// glTF has no separate alpha map, so bake each window mask into the alpha channel of a colour texture.
+function withAlpha(colourCanvas, alphaCanvas, name) {
+  const w = alphaCanvas.width, h = alphaCanvas.height;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  let img;
+  if (colourCanvas) { ctx.drawImage(colourCanvas, 0, 0); img = ctx.getImageData(0, 0, w, h); }
+  else { img = ctx.createImageData(w, h); img.data.fill(255); }
+  const a = alphaCanvas.getContext('2d').getImageData(0, 0, w, h).data;
+  for (let k = 0; k < a.length; k += 4) img.data[k + 3] = a[k];
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.name = name;
+  return t;
+}
+// Returns the model as a binary glTF (.glb) ArrayBuffer: gear down, flaps up, doors shut, propeller still.
+window.exportGLB = async function exportGLB() {
+  const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
+  const bodyMat = new THREE.MeshPhysicalMaterial({ ...paintProps, name: 'Paint_livery',
+    map: withAlpha(liveryTex.image, maskTex.image, 'livery'), alphaTest: 0.5, side: THREE.DoubleSide });
+  const glassMat = new THREE.MeshPhysicalMaterial({ name: 'Glass', color: M.glass.color, roughness: 0.04,
+    map: withAlpha(null, glassTex.image, 'glass_mask'), transparent: true, opacity: M.glass.opacity, side: THREE.DoubleSide });
+  const names = new Map([[M.white, 'Paint_white'], [M.accent, 'Paint_accent'], [M.trim, 'Trim_black'], [M.tire, 'Rubber'],
+    [M.metal, 'Metal'], [M.blade, 'Propeller_composite'], [M.seat, 'Seat'], [M.floor, 'Cabin_floor'], [M.screen, 'Screen']]);
+  names.forEach((n, m) => { m.name = n; });
+
+  const saved = { flap: state.flap, door: state.door, prop: prop.rotation.x };
+  flaps.forEach(f => f.set(0)); ailerons.forEach(a => a.set(0)); elevators.forEach(e => e.set(0)); rudder.set(0);
+  doors.forEach(d => d(0)); prop.rotation.x = 0;
+  const root = named(plane.clone(true), 'Sling_4_TSi');
+  flaps.forEach(f => f.set(saved.flap * DEG * f.side)); doors.forEach(d => d(saved.door)); prop.rotation.x = saved.prop;
+
+  const drop = [];
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.material === M.lining || o.geometry === disc.geometry) drop.push(o);
+    else if (o.material === M.body) o.material = bodyMat;
+    else if (o.material === M.glass) o.material = glassMat;
+  });
+  drop.forEach(o => o.removeFromParent());
+  root.traverse(o => { o.visible = true; if (!o.name && o.parent) o.name = `${o.parent.name}_mesh`; });
+
+  return new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: false, maxTextureSize: DETAIL.tex });
+};
+
+/* ---------- resize & loop ---------- */
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  renderer.domElement.style.width = w + 'px';
+  renderer.domElement.style.height = h + 'px';
+  labelRenderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.fov = w / h < 0.9 ? 48 : 34;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+const clock = new THREE.Clock();
+let elapsed = 0;
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  elapsed += dt;
+  const ease = k => Math.min(1, dt * k);
+
+  state.flap += (state.flapTarget - state.flap) * ease(3);
+  state.door += (state.doorTarget - state.door) * ease(2.5);
+  if (state.check) {
+    // POH 1.4.5 travel: ailerons ±24°, elevator 32° up / 22° down, rudder ±23°
+    state.checkT += dt;
+    const t = state.checkT, e = Math.sin(t * 1.4 + 1.0);
+    state.ail = 24 * Math.sin(t * 2.0);
+    state.ele = e > 0 ? 32 * e : 22 * e;
+    state.rud = 23 * Math.sin(t * 1.1 + 2.0);
+  } else {
+    state.ail *= 1 - ease(4); state.ele *= 1 - ease(4); state.rud *= 1 - ease(4);
+  }
+  // Positive = trailing edge down. A port hinge axis points outboard toward -z, so its sign flips.
+  flaps.forEach(f => f.set(state.flap * DEG * f.side));
+  ailerons.forEach(a => a.set((a.side === 1 ? state.ail : -state.ail) * DEG * a.side));
+  elevators.forEach(e => e.set(-state.ele * DEG * e.side));
+  rudder.set(-state.rud * DEG);
+  doors.forEach(d => d(state.door));
+
+  state.rpm += ((state.engine ? 1 : 0) - state.rpm) * ease(state.engine ? 0.8 : 0.6);
+  prop.rotation.x += state.rpm * dt * 38;
+  discMat.opacity = Math.max(0, state.rpm - 0.4) * 0.22;
+
+  const on = state.lights;
+  navR.visible = navL.visible = on;
+  const strobeOn = on && (elapsed % 1.2) < 0.06;
+  strobes.forEach(s => { s.visible = strobeOn; });
+
+  if (tween) {
+    tween.t = Math.min(1, tween.t + dt / 0.9);
+    const k = tween.t < 0.5 ? 4 * tween.t ** 3 : 1 - Math.pow(-2 * tween.t + 2, 3) / 2;
+    camera.position.lerpVectors(tween.from, tween.to, k);
+    controls.target.lerpVectors(tween.fromT, tween.toT, k);
+    if (tween.t >= 1) tween = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+document.getElementById('loading').remove();
+frame();
+</script>

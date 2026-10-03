@@ -1,0 +1,14 @@
+# This repository versions the generator, the MSFS build tools and docs only; everything else stays local.
+/Documents/
+/model/blueprints/
+/model/*.blend
+/model/*.glb
+/msfs/*
+!/msfs/README.md
+!/msfs/docs/
+!/msfs/tools/
+/msfs/tools/__pycache__/
+/msfs/tools/templates/
+/msfs/tools/data/*
+!/msfs/tools/data/poh_planform.json
+/glb/
