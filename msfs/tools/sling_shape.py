@@ -84,12 +84,17 @@ def spow(v, e):
 # Ht with its half-width scale narrowing (quadratically, so the cheek line stays smooth) to Wt * Wc, the lower
 # half likewise down to Hb (Wb * Wc), exponents n_up and n_dn. The top line droops from the windscreen base down
 # to the spinner (COWL_HT, close to the generator's fTop).
-# On top: shallow concave pockets round the cheek inlets, a channel along the keel for the nose gear leg, and the
-# lower cowl's aft edge standing proud of the belly as a rearward-facing cowl-flap exit.
+# On top: shallow concave pockets round the cheek inlets, a channel along the keel for the nose gear leg, the
+# lower cowl's aft edge standing proud of the belly as a rearward-facing cooling exit, the raised crown, and the
+# two-piece cowl's own joints: the upper half overlapping the lower along the split line (SPLIT_LEDGE), and the
+# whole cowl standing a little proud of the fuselage skin at the firewall joint (JOINT_STEP). exterior.py builds
+# what is not a skin offset: the rolled nose ring, the open cooling exit, the nose gear well.
 # (The Meshy-derived cowl variants of October 2026 are in reference/disabled and tools/data/disabled.)
 FIREWALL_X = 1165.0
 PROP_AXIS_H = 1170.0
 RING_R = 142.5                                   # mm, nose ring radius (285 mm), spinner backplate 140 mm
+RING_LIP = (8.0, 3.0)                            # mm: the ring's rolled leading edge, its roll radius and how far it
+#                                                  curls forward of X 290 (exterior.nose_ring builds it)
 COWL_HC = Smooth([[290, PROP_AXIS_H], [475, 1150], [700, 1115], [1000, 1060]])
 COWL_WC = Smooth([[290, RING_R], [475, 330], [700, 425], [1000, 462]])
 COWL_HT = Smooth([[290, PROP_AXIS_H + RING_R], [475, 1330], [700, 1352], [1000, 1373]])
@@ -104,7 +109,17 @@ POCKET = (232.0, 1188.0)
 SCOOP_DEPTH = Smooth([[300, 0], [370, 30], [430, 30], [600, 14], [780, 0]])          # mm
 SCOOP_WIDTH = Smooth([[300, 0.30], [430, 0.26], [600, 0.16], [780, 0.10]])          # rad (sigma, polar angle)
 GEAR_CHANNEL = (720.0, 820.0, 70.0, 22.0)        # X start, X full, half-width, depth (mm)
-EXIT_LIP = (1000.0, 1150.0, 18.0)                # X start, X full, outward step of the lower cowl's aft edge (mm)
+GEAR_WELL = (870.0, 1090.0, 42.0, 24.0, 60.0)    # the leg's opening in the keel: X range, half-width, corner radius,
+#                                                  depth of the dark well (mm); the leg top is at X 884..1074, H 700
+EXIT_LIP = (1000.0, 1150.0, 24.0)                # X start, X full, outward step of the lower cowl's aft edge (mm)
+EXIT_ARC = (-0.35, -0.7)                         # sin(phi) over which the lip (and the exit slot) fades in, top down
+EXIT_DEPTH = 60.0                                # mm the open exit slot runs forward under the cowl floor
+# the two halves: the split line (just under the cheek inlets) where the upper cowl's edge overlaps the lower by
+# SPLIT_LEDGE (a radial step, blended over SPLIT_BLEND either side), fading in behind the one-piece nose ring; and
+# the firewall joint, the cowl's aft edge standing JOINT_STEP proud of the fuselage skin, ramped up over JOINT_X
+COWL_SPLIT_H = 1125.0
+SPLIT_LEDGE, SPLIT_BLEND, SPLIT_X = 2.0, 3.0, (300.0, 340.0)
+JOINT_STEP, JOINT_X = 3.0, (1090.0, 1150.0)
 # the crown: a raised band along the top between two edges that run from beside the spinner up and out to the
 # windscreen corners (POH front and plan views; the photos' top contours). Half-width (mm) by station, height, and the
 # width of the rounded edge.
@@ -158,8 +173,10 @@ def cowl_section(X, s=None):
     return ang[o], rad[o]
 
 
-def skin_point(X, a):
-    """Skin point (H, Z) mm at station X (scalar) and section angle(s) a, with the cowling."""
+def skin_point(X, a, exit_lip=True):
+    """Skin point (H, Z) mm at station X (scalar) and section angle(s) a, with the cowling.
+
+    exit_lip=False leaves out the lower cowl's proud aft edge: the floor of the cooling exit slot under it."""
     s = section(X)
     Z, H = _generator_points(s, a)
     if X >= FIREWALL_X:
@@ -183,9 +200,9 @@ def skin_point(X, a):
     if wg > 0:
         r = r - gd * wg * np.clip(1 - (Zr / gw) ** 2, 0, 1) * (np.sin(phi) < 0)
     lx0, lx1, lo = EXIT_LIP
-    wl = float(_smoothstep(lx0, lx1, X))
+    wl = float(_smoothstep(lx0, lx1, X)) if exit_lip else 0.0
     if wl > 0:
-        r = r + lo * wl * _smoothstep(-0.35, -0.7, np.sin(phi))
+        r = r + lo * wl * _smoothstep(EXIT_ARC[0], EXIT_ARC[1], np.sin(phi))
     # the crown on top
     c0, c1, c2, c3 = CROWN_X
     wc = float(_smoothstep(c0, c1, X) * (1 - _smoothstep(c2, c3, X)))
@@ -193,6 +210,15 @@ def skin_point(X, a):
         hw = float(CROWN_HW(X))
         band = _smoothstep(hw + CROWN_EDGE / 2, hw - CROWN_EDGE / 2, np.abs(Zr)) * (np.sin(phi) > 0.3)
         r = r + CROWN_H * wc * band
+    # the split line: the upper half's edge stands SPLIT_LEDGE outside the lower half's
+    ws = float(_smoothstep(SPLIT_X[0], SPLIT_X[1], X))
+    if ws > 0:
+        r = r + SPLIT_LEDGE * ws * (_smoothstep(-SPLIT_BLEND, SPLIT_BLEND, Hr - COWL_SPLIT_H) - 0.5)
+    # the firewall joint: the cowl's aft edge proud of the fuselage skin (the skin returns to the cabin section at
+    # the first station at or behind FIREWALL_X, so the step shows as a short steep band there)
+    wj = float(_smoothstep(JOINT_X[0], JOINT_X[1], X))
+    if wj > 0:
+        r = r + JOINT_STEP * wj
     Z = np.sign(Z) * r * np.cos(phi)
     H = hm + r * np.sin(phi)
     return H, Z
@@ -216,6 +242,13 @@ def arc_table(X):
     seg = np.hypot(np.diff(H), np.diff(Z))
     cum = np.concatenate([[0.0], np.cumsum(seg)])
     return cum / cum[-1], H, Z, S
+
+
+def belly_height(X, Z, exit_lip=True):
+    """Skin height H (mm) on the underside at station X (scalar) and Z (array), with the cowl features."""
+    H, Zr = skin_point(X, _A[K // 2:], exit_lip)        # the lower half: a = pi..2pi, Z rising from -hw to +hw
+    o = np.argsort(Zr)
+    return np.interp(Z, Zr[o], H[o])
 
 
 def arc_fraction_grid(nx=512):

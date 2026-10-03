@@ -6,6 +6,9 @@
   cowling, with a rounded lip and a dark duct running back into the nose (radiator core in the chin).
 - exhaust(): the pipe hung under the cowling without touching it. Rebuild it as a bent tailpipe that
   comes out through the cowling floor, with a collar at the exit and an open, sooty end.
+- nose_ring(), cooling_exit(), gear_well(): the cowl's details that are not skin offsets (those are in
+  sling_shape.skin_point): the rolled nose ring round the spinner with a dark bulkhead behind it, the open
+  cooling exit slot under the lower cowl's aft edge, and the nose gear leg's opening in the keel.
 - wheel_pants(): the 381 mm main tyres poked through the top of their fairings. Grow each fairing
   (about its bottom, so the ground clearance stays) until the tyre sits inside it with a margin.
 
@@ -69,17 +72,18 @@ def new_mesh_object(name, bm, mat, parent):
     return o
 
 
-def loft(rings, facing, cap=None):
+def loft(rings, facing, cap=None, closed=True):
     """Quad strips between closed rings of equal length (lists of world Vectors).
 
     facing(centre, j) -> the direction face j of the ring should face (MSFS draws one side only).
-    cap: (ring index, direction) to close that ring with a fan facing `direction`."""
+    cap: (ring index, direction) to close that ring with a fan facing `direction`.
+    closed=False lofts open arcs instead (no quad from the last point back to the first)."""
     bm = bmesh.new()
     vs = [[bm.verts.new(p) for p in ring] for ring in rings]
     n = len(rings[0])
     faces = []
     for a, b in zip(vs, vs[1:]):
-        for j in range(n):
+        for j in range(n if closed else n - 1):
             faces.append((bm.faces.new((a[j], a[(j + 1) % n], b[(j + 1) % n], b[j])), j))
     if cap:
         ring = vs[cap[0]]
@@ -535,6 +539,163 @@ def graft_nose():
     fm.update()
     print(f'graft: reference nose, {added} faces in place of {len(nose)} fuselage faces ahead of X {GRAFT_X:.0f}, '
           f'{len(recess)} of them recessed inlets')
+
+
+# ================================ nose ring ================================
+def nose_ring(root):
+    """The cowl's nose ring: its rolled leading edge, a bead of S.RING_LIP (roll radius, forward curl) round the
+    285 mm opening, curling forward and in from the skin's front edge, and a dark bulkhead closing the opening behind
+    the spinner backplate. The bead tapers out across the bottom, where the chin grille's lip is tucked under the
+    ring, and the bulkhead stops at the grille's top edge so the grille's duct stays open."""
+    white = bpy.data.materials['Paint_white']
+    dark = material('Intake_duct', (0.012, 0.012, 0.013), 0.7)
+    roll, fwd = S.RING_LIP
+    N = 180
+    th = np.linspace(0, 2 * np.pi, N, endpoint=False)             # polar angle about the thrust line, 0 = starboard
+    off_bottom = np.abs(np.angle(np.exp(1j * (th + np.pi / 2))))   # angular distance from the bottom (rad)
+    taper = 0.05 + 0.95 * S._smoothstep(math.radians(32), math.radians(50), off_bottom)
+
+    def pt(x, r, t):
+        return Vector(S.to_blender(x, S.PROP_AXIS_H + r * math.sin(t), r * math.cos(t)))
+
+    rings = []
+    for u in np.linspace(0, math.pi, 7):                           # u = 0 on the skin's edge, pi at the inner edge
+        rings.append([pt(S.XN - fwd * k * math.sin(u), S.RING_R - roll * k * (1 - math.cos(u)), t)
+                      for t, k in zip(th, taper)])
+    cores = [pt(S.XN, S.RING_R - roll * k, t) for t, k in zip(th, taper)]
+    new_mesh_object('Cowl_ring', loft(rings, lambda c, j: c - cores[j]), white, root)
+    disc = [pt(S.XN + 2.0, S.RING_R - 1.0, t) for t in th]
+    for v in disc:                                                 # flat-bottomed, above the chin grille
+        v.z = max(v.z, 1050.0 / 1000)
+    new_mesh_object('Cowl_ring_bulkhead', loft([disc], None, cap=(0, Vector((1, 0, 0)))), dark, root)
+    print(f'cowl: nose ring, {roll:.0f} mm roll curling {fwd:.0f} mm forward, bulkhead behind it')
+
+
+# ================================ cooling exit ================================
+def _fuselage_stations(fus):
+    """Distinct station X (mm) of the fuselage shell's vertices."""
+    mw = fus.matrix_world
+    return sorted({round(S.XC - (mw @ v.co).x * 1000, 1) for v in fus.data.vertices})
+
+
+def _arc(X, phis, exit_lip=True, inset=0.0):
+    """Skin points at station X and polar angles `phis` about (0, hm), `inset` mm inside the skin, as Vectors."""
+    H, Z = S.skin_point(X, S._A, exit_lip)
+    hm = float(S.section(X)['hm'])
+    phi = np.arctan2(H - hm, Z)
+    r = np.hypot(Z, H - hm)
+    o = np.argsort(phi)
+    rr = np.interp(phis, phi[o], r[o]) - inset
+    return [Vector(S.to_blender(X, hm + ri * math.sin(p), ri * math.cos(p))) for ri, p in zip(rr, phis)]
+
+
+def cooling_exit(root):
+    """Open the cooling exit: the lower cowl's proud aft edge (S.EXIT_LIP) ends at the last cowl station as a free
+    edge. The skin faces that closed it onto the fuselage belly, over the arc where the lip stands, are removed. Under
+    the cowl floor a dark duct floor runs forward S.EXIT_DEPTH to a bulkhead, so the slot reads as an exit and
+    nothing inside shows, and the cowl's trailing edge gets a strip of thickness."""
+    fus = O['Fuselage']
+    mw = fus.matrix_world
+    white = bpy.data.materials['Paint_white']
+    dark = material('Intake_duct', (0.012, 0.012, 0.013), 0.7)
+    xs = _fuselage_stations(fus)
+    x_c = max(x for x in xs if x < S.FIREWALL_X)                   # the last cowl station
+    x_f = min(x for x in xs if x >= S.FIREWALL_X)                  # the first cabin station
+    hm_c = float(S.section(x_c)['hm'])
+    # the closing faces: between the two stations, on the arc where the lip stands clear of the belly
+    bm = bmesh.new()
+    bm.from_mesh(fus.data)
+    dead = []
+    for f in bm.faces:
+        X = [S.XC - (mw @ v.co).x * 1000 for v in f.verts]
+        if min(X) < x_c - 0.5 or max(X) > x_f + 0.5 or not (x_c + 1 < sum(X) / len(X) < x_f - 1):
+            continue
+        c = mw @ f.calc_center_median()
+        Z, H = -c.y * 1000, c.z * 1000
+        if (H - hm_c) / math.hypot(Z, H - hm_c) < -0.5:
+            dead.append(f)
+    bmesh.ops.delete(bm, geom=dead, context='FACES')
+    bm.to_mesh(fus.data)
+    bm.free()
+    # the duct floor, 6 mm inside the floor the lip is added to, from the bulkhead forward to the cowl's edge, then
+    # onto the cabin skin at the first cabin station; it reaches round past the opening, under the skin
+    a0 = math.asin(0.3)
+    phis = np.linspace(-math.pi + a0, -a0, 72)
+    x0 = max(x_c - S.EXIT_DEPTH, S.GEAR_WELL[1] + 12)             # the bulkhead stays behind the gear well
+    rings = [_arc(x0, phis)]                                       # the bulkhead's outer edge, on the skin
+    for x in np.linspace(x0, x_c, 5):
+        rings.append(_arc(float(x), phis, exit_lip=False, inset=6.0))
+    rings.append(_arc(x_f, phis))
+    xb0 = (S.XC - x0) / 1000
+
+    def facing(c, j):
+        if abs(c.x - xb0) < 1e-5:                                  # the bulkhead faces aft
+            return Vector((-1, 0, 0))
+        return Vector((0, c.y, c.z - hm_c / 1000))                 # the floor faces out of the section
+    new_mesh_object('Cowl_exit_duct', loft(rings, facing, closed=False), dark, root)
+    # the trailing edge's thickness, over the open arc
+    open_ = np.sin(phis) < -0.5
+    edge = [[v for v, k in zip(_arc(x_c, phis, inset=d), open_) if k] for d in (0.0, 4.0)]
+    new_mesh_object('Cowl_exit_edge', loft(edge, lambda c, j: Vector((-1, 0, 0)), closed=False), white, root)
+    print(f'cowl: cooling exit opened over {len(dead)} faces between X {x_c:.0f} and {x_f:.0f}, '
+          f'duct {S.EXIT_DEPTH:.0f} mm deep')
+
+
+# ================================ nose gear well ================================
+def gear_well(root):
+    """The nose gear leg's opening in the keel channel (S.GEAR_WELL): a rounded rectangle cut in the cowl floor, a
+    raised flange round it that hides the cut, and a dark well above it. The generator's leg stopped short of the
+    channel floor with an open top; its top is raised into the well."""
+    x0, x1, hw, rc, depth = S.GEAR_WELL
+    fus = O['Fuselage']
+    mw = fus.matrix_world
+    white = bpy.data.materials['Paint_white']
+    dark = material('Intake_duct', (0.012, 0.012, 0.013), 0.7)
+    cx, w, h = (x0 + x1) / 2, x1 - x0, 2 * hw
+    outline, normals = rounded_rect(w, h, rc)                     # (along X, Z) round the well's centre
+
+    def belly(X, Z, up=0.0):
+        return Vector(S.to_blender(X, float(S.belly_height(X, np.array([Z]))[0]) + up, Z))
+
+    # flange: (offset from the outline, mm, + outward; height off the skin, mm, down)
+    rings = []
+    for off, proud in ((10, 0.0), (5, 2.5), (0, 3.0), (-3, 1.5)):
+        rings.append([belly(cx + dx + nx * off, dz + nz * off, -proud) for (dx, dz), (nx, nz) in zip(outline, normals)])
+    cores = [belly(cx + dx + nx, dz + nz, 4.0) for (dx, dz), (nx, nz) in zip(outline, normals)]
+    new_mesh_object('Nose_gear_well_flange', loft(rings, lambda c, j: c - cores[j]), white, root)
+    # the well: from the flange's inner edge straight up, narrowing a little, closed at the top
+    mouth = [belly(cx + dx - nx * 3, dz - nz * 3) for (dx, dz), (nx, nz) in zip(outline, normals)]
+    well = [mouth]
+    for up, shrink in ((12.0, 3.0), (depth, 8.0)):
+        well.append([p + Vector((nx * shrink, nz * shrink, up)) / 1000 for p, (nx, nz) in zip(mouth, normals)])   # inward: x = -X, y = -Z
+    xb_c = (S.XC - cx) / 1000
+    new_mesh_object('Nose_gear_well', loft(well, lambda c, j: Vector((xb_c - c.x, -c.y, 0)),
+                                           cap=(len(well) - 1, Vector((0, 0, -1)))), dark, root)
+    # open the floor inside the flange
+    bm = bmesh.new()
+    bm.from_mesh(fus.data)
+    dead = []
+    for f in bm.faces:
+        c = mw @ f.calc_center_median()
+        X, Z, H = S.XC - c.x * 1000, -c.y * 1000, c.z * 1000
+        if inside_rounded_rect(X - cx, Z, w + 8, h + 8, rc + 4) and H < float(S.section(X)['hm']):
+            dead.append(f)
+    bmesh.ops.delete(bm, geom=dead, context='FACES')
+    bm.to_mesh(fus.data)
+    bm.free()
+    # the leg's top, up into the well
+    leg = O.get('Nose_gear_leg')
+    raised = 0
+    if leg:
+        lmw, lme = leg.matrix_world, leg.data
+        inv = lmw.inverted()
+        for v in lme.vertices:
+            p = lmw @ v.co
+            if p.z > 0.69:
+                v.co = inv @ Vector((p.x, p.y, p.z + 0.07))
+                raised += 1
+        lme.update()
+    print(f'cowl: gear well {w:.0f} x {h:.0f} mm at X {cx:.0f}, opened {len(dead)} faces, leg top raised ({raised} vertices)')
 
 
 # ================================ intakes ================================

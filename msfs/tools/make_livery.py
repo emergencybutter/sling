@@ -4,7 +4,9 @@
 
 Repaints what the generator (../model/index.html, paintSkin) drew: white skin, the accent side stripe
 and pin stripe, dark window surrounds, door and cowling seams, the baggage door, and the window
-openings (livery alpha; the glass texture's alpha is its inverse). Two differences:
+openings (livery alpha; the glass texture's alpha is its inverse), plus the cowl's panel details: the
+split line between its halves with its row of quarter-turn fasteners, the fastener row along the firewall
+joint, and the oil door with its cam-locks. Two differences:
 - v runs by distance around the section (sling_shape.arc_fraction) instead of the section angle,
   which gave the side stripe about 7 mm per texel and visibly stepped edges;
 - every texel is the mean of 2 x 3 samples, so edges are anti-aliased.
@@ -29,7 +31,10 @@ WHITE = np.array([243, 244, 245], float)
 DARK = np.array([27, 31, 35], float)
 SEAM = np.array([150, 156, 162], float)
 LOCK = np.array([110, 114, 118], float)
-COWL_SPLIT_H = 1125.0                  # mm, the cowl halves' split line (just under the cheek inlets)
+COWL_SPLIT_H = S.COWL_SPLIT_H          # mm, the cowl halves' split line (just under the cheek inlets)
+SPLIT_LOCKS = np.linspace(360.0, 1120.0, 9)   # X of the quarter-turn fasteners along the lower half's flange
+JOINT_LOCKS = (1148.0, 55.0, 110.0)    # X, first and pitch (mm of arc from the roof centreline) along the firewall joint
+LOCK_R = 5.5                           # mm, a fastener's painted radius
 OIL_DOOR = (905.0, 1065.0, 70.0, 200.0)   # X range, port |Z| range (mm): just forward of the windscreen base
 ACC = np.array([int(ACCENT[i:i + 2], 16) for i in (1, 3, 5)], float)
 
@@ -103,6 +108,14 @@ def paint(X, H, Z, sn, q, geo):
         col[H < 1380] = SEAM                                   # firewall / cowling joint
     if 296 < X < 1163:                                         # upper / lower cowl split, near the thrust line
         col[(np.abs(H - COWL_SPLIT_H) < 2.5) & (np.abs(Z) > 60)] = SEAM
+        for cx in SPLIT_LOCKS:                                 # its fasteners, on the lower half just under the line
+            if abs(X - cx) < LOCK_R + 1:
+                col[((X - cx) ** 2 + (H - (COWL_SPLIT_H - 12)) ** 2 < LOCK_R ** 2) & (np.abs(Z) > 60)] = LOCK
+    jx, j0, jp = JOINT_LOCKS                                   # fasteners along the cowl's aft edge, by arc length
+    if abs(X - jx) < LOCK_R + 1:
+        m = (q - j0) % jp
+        near = np.minimum(m, jp - m)
+        col[((X - jx) ** 2 + near ** 2 < LOCK_R ** 2) & (sn > -0.5) & (H < 1380)] = LOCK
     x0, x1, z0, z1 = OIL_DOOR                                  # oil door on the port upper cowl, cam-locks
     if x0 - 8 < X < x1 + 8:
         zz = -Z

@@ -313,6 +313,10 @@ if PART != 'interior':
     else:
         exterior.intakes(O['Sling_4_TSi'])
     exterior.exhaust(O['Sling_4_TSi'])
+    if not os.path.exists(exterior.REFERENCE_SPEC):             # the parametric cowl's own details
+        exterior.nose_ring(O['Sling_4_TSi'])
+        exterior.cooling_exit(O['Sling_4_TSi'])
+        exterior.gear_well(O['Sling_4_TSi'])
     exterior.wheel_pants()
     exterior.pitot(O['Sling_4_TSi'])
 

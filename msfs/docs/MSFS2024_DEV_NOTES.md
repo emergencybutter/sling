@@ -309,6 +309,9 @@ The generated model (../model/index.html) is left untouched; blender_export.py p
   jagged cut) and a dark duct with a radiator core replace the flat patches.
 - **Exhaust**: bent pipe out through the cowling floor with a collar; **wheel pants**: scaled about their
   bottom until the tyre above axle-5 cm is enclosed (mains x1.14, nose x1.07).
+- **Cowl details** (exterior.nose_ring / cooling_exit / gear_well, parametric cowl only): the rolled nose ring with
+  a dark bulkhead behind it, the open cooling exit slot under the lower cowl's aft edge, the nose gear leg's well in
+  the keel. See "Cowl details" below.
 - Open meshes: MSFS draws one side, so every generated face is oriented explicitly (exterior.loft's `facing`).
 - **Windows** (make_livery.window_at): laid out on the skin in (X, q = arc distance from the roof centreline);
   door windows = the gull-wing door inset by a frame (60 mm below the hinge line, sill at H 1330), windscreen corners
@@ -491,3 +494,42 @@ fuel selector is not OFF. `<Update>` is how a behaviour runs code continuously (
 - Scoops: a recess round each cheek inlet that runs aft as a tapering groove. `SCOOP_DEPTH` / `SCOOP_WIDTH` are by station, centred on the inlet's polar angle, and replace the old Gaussian `POCKET`.
 - Crown: a raised band (20 mm, 34 mm rounded edge) between edges running from beside the spinner (95 mm half-width) to the windscreen corners (250 mm). It rises over X 330–760 and fades into the windscreen base.
 - Check: an alpha-silhouette ortho render plus an edge-distance table against the POH side view. The top line is within ~10 mm over X 440–880. The rear cowl top (X 900–1150) is still 10–28 mm under the drawing.
+
+## Cowl details (Oct 2026, parametric cowl)
+Skin offsets in `sling_shape.skin_point` (so the mesh reshape, the arc-length UVs and the livery all agree) and
+geometry in `exterior.py`, run from `blender_export.py` after the exhaust, only when there is no `reference/cowl.json`.
+- Skin (`sling_shape.py`):
+  - Split line: the two-piece cowl's joint at `COWL_SPLIT_H` (1125, now defined here; make_livery imports it). The
+    upper half's edge stands `SPLIT_LEDGE` (2 mm) outside the lower half's, blended over ±3 mm, fading in behind the
+    one-piece nose ring (X 300–340). Reads as a shaded line under the painted seam.
+  - Firewall joint: the cowl's aft edge stands `JOINT_STEP` (3 mm) proud of the fuselage skin, ramped up over X
+    1090–1150. The skin returns to the cabin section at the first station at or behind X 1165 (1170 in the high
+    model, 1175 in the standard one), so the step is a short steep band there, under the painted seam at 1165.
+  - Exit lip raised from 18 to 24 mm (`EXIT_LIP`); `EXIT_ARC` is the sin(phi) range it (and the slot) fades in
+    over; `skin_point(..., exit_lip=False)` gives the floor without it (the exit duct's floor).
+  - `belly_height(X, Z)`: the underside's H at (X, Z) with every feature, for placing things on the keel.
+  - `RING_LIP`, `GEAR_WELL`, `EXIT_DEPTH`: the geometry's sizes, kept with the shape.
+- Geometry (`exterior.py`):
+  - `nose_ring()`: a bead round the 285 mm opening, rolled 8 mm in and curling 3 mm forward of X 290 (the spinner
+    backplate is 6 mm ahead, so a 3 mm gap stays). It tapers out across the bottom, where the chin grille's lip is
+    tucked under the ring. A dark bulkhead disc 2 mm behind the ring closes the opening; it is flat-bottomed at
+    H 1050 so the grille's duct is not crossed. Before this the ring was open and the inside of the hull showed through
+    the spinner gap.
+  - `cooling_exit()`: the fuselage faces between the last cowl station and the first cabin station are deleted over
+    the arc where the lip stands clear (sin(phi) < −0.5), leaving the proud floor as a free edge with a 23–27 mm slot
+    under it. A dark duct floor 6 mm inside the lip-less skin runs forward `EXIT_DEPTH` (60 mm, but never ahead of
+    the gear well) to a bulkhead facing aft, so nothing inside shows; a 4 mm strip gives the trailing edge thickness.
+  - `gear_well()`: the leg's opening in the keel channel, a 220 × 84 mm rounded rectangle (`GEAR_WELL`) with a
+    3 mm flange round it (hides the jagged cut, as the inlet lips do) and a dark well 60 mm up, closed at the top.
+    The generator's leg stopped 13 mm short of the channel floor with an open top; its top vertices (above H 690)
+    are raised 70 mm into the well.
+  - `loft(..., closed=False)` lofts open arcs (the duct floor, the edge strip).
+- Livery (`make_livery.paint`): quarter-turn fasteners (5.5 mm, `LOCK` grey) every 95 mm along the lower half's flange
+  12 mm under the split line (`SPLIT_LOCKS`), and every 110 mm of arc along the cowl's aft edge at X 1148
+  (`JOINT_LOCKS`), skipped over the exit slot.
+- Checked without Blender: `sling_shape` (arc fractions monotone, sections smooth, profiles plotted) and the three
+  geometry functions run against a stand-in `bpy`/`bmesh`/`mathutils` on a fuselage grid built as the generator
+  builds it (faces deleted: 80 for the exit, 56 for the well, on the high grid). Not yet rendered in Blender or the
+  sim: the first build should look at `ext_cowl_chin`, `ext_cowl_front` and a view from behind-below.
+- Not changed: the rear cowl top against the POH side view (previous section). The top line is left as it was.
+
